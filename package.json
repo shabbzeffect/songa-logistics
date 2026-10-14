@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/money.test.ts tests/status.test.ts tests/phone.test.ts tests/parcels.test.ts tests/validation.test.ts tests/auth.test.ts",
+    "test": "tsx --test tests/money.test.ts tests/status.test.ts tests/phone.test.ts tests/parcels.test.ts tests/validation.test.ts tests/auth.test.ts tests/mpesa.test.ts",
     "test:api": "node --test tests/api.test.ts",
     "typecheck": "tsc --noEmit"
   },

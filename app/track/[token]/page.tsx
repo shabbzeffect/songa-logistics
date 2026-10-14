@@ -140,6 +140,9 @@ function TrackInner({ params }: { params: Promise<{ token: string }> }) {
         <p className="mt-2 text-xs text-stone-500">
           Paid via {order.paymentMethod === "cash_on_delivery" ? "cash on delivery" : order.paymentMethod === "mpesa_on_delivery" ? "M-Pesa on delivery" : "M-Pesa"} · {order.paymentStatus.replaceAll("_", " ")}
         </p>
+        {order.paymentMethod === "mpesa_stk" && (order.paymentStatus === "pending" || order.paymentStatus === "failed") && (
+          <MpesaPromptBox token={token} failed={order.paymentStatus === "failed"} onUpdate={load} />
+        )}
       </div>
 
       <div className="rounded-2xl bg-white p-6 shadow-sm">
@@ -230,5 +233,48 @@ function ReviewBox({ token }: { token: string }) {
         {saving ? "Saving…" : "Submit rating"}
       </button>
     </form>
+  );
+}
+
+function MpesaPromptBox({ token, failed, onUpdate }: { token: string; failed: boolean; onUpdate: () => void }) {
+  const [sending, setSending] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function resend() {
+    setSending(true);
+    setMsg("");
+    try {
+      const r = await fetch("/api/payments/mpesa-resend", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const j = await r.json();
+      if (j.ok) { setMsg("Prompt sent — enter your M-Pesa PIN on your phone."); onUpdate(); }
+      else setMsg(j.error ?? "Couldn't resend the prompt.");
+    } catch {
+      setMsg("Network hiccup — try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl bg-forest-50 p-4 text-sm" role="status">
+      <p className="font-bold text-forest-950">
+        {failed ? "That M-Pesa attempt didn't complete." : "Check your phone for the M-Pesa prompt."}
+      </p>
+      <p className="mt-0.5 text-stone-600">
+        {failed
+          ? "Your order is saved — enter your PIN when the new prompt arrives."
+          : "Enter your M-Pesa PIN to pay. Nothing is charged until you approve on your phone."}
+      </p>
+      <button
+        onClick={resend} disabled={sending}
+        className="mt-2 rounded-xl bg-forest-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+      >
+        {sending ? "Sending…" : failed ? "Send a new prompt" : "Resend prompt"}
+      </button>
+      {msg && <p className="mt-1 font-semibold">{msg}</p>}
+    </div>
   );
 }

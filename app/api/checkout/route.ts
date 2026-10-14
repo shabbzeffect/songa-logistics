@@ -7,7 +7,7 @@ import { normalizeKEPhone } from "@/lib/phone";
 import { calcTotals, percentOff, toKES } from "@/lib/money";
 import { newOrderRef, newTrackingToken } from "@/lib/ids";
 import { validateScheduledFor } from "@/lib/time";
-import { mpesaConfigured } from "@/lib/mpesa";
+import { initiateStkPush, mpesaConfigured } from "@/lib/mpesa";
 
 class ConflictError extends Error {}
 
@@ -245,7 +245,22 @@ export async function POST(req: Request) {
       return response;
     });
 
-    return ok(result, 201);
+    // Online M-Pesa prompt goes out AFTER the order commits (never inside the tx).
+    let stk: { sent: boolean; message?: string } | undefined;
+    if (input.paymentMethod === "mpesa_stk") {
+      const push = await initiateStkPush({ orderRef: result.ref, phoneE164: phone, amount: result.total });
+      if (push.ok) {
+        await db
+          .update(s.paymentIntents)
+          .set({ providerRef: push.checkoutRequestId })
+          .where(eq(s.paymentIntents.idempotencyKey, `pay-${input.idempotencyKey}`));
+        stk = { sent: true };
+      } else {
+        stk = { sent: false, message: push.error };
+      }
+    }
+
+    return ok({ ...result, ...(stk ? { stk } : {}) }, 201);
   } catch (e) {
     if (e instanceof ConflictError) return fail(e.message, 409);
     // Double-submit race: idempotency row won by another request → replay it

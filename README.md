@@ -71,6 +71,10 @@ Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlit
 - **E-commerce parcels:** prohibited-items acknowledgement, server-side estimate (never a guaranteed
   quote), 20 kg cap, pickup-confirmation step, rider assignment, tracking + history. Built for
   online sellers and personal sends alike.
+- **Online M-Pesa:** with credentials, checkout sends a Daraja STK prompt after the order commits,
+  stores the `CheckoutRequestID` on the payment intent, and marks paid only on a verified callback
+  (amount-checked, exactly-once, order payment synced). Expired prompts can be resent from the
+  tracking page (max 3 per 10 minutes); stale callbacks can't complete after a resend.
 - **Medical courier:** pharmacy-essentials catalogue with sealed, priority handling; prescription
   orders are verified with a pharmacist by phone before dispatch (see `/support` policy).
 - **Merchant console** (`/merchant`): order queue with legal transitions, menu CRUD,
@@ -87,7 +91,7 @@ Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlit
 
 | Service | Status | To switch on |
 |---|---|---|
-| Online M-Pesa (Daraja STK) | **Off** — checkout offers *cash* + *M-Pesa on delivery* only | Set `MPESA_ENABLED=true` + key/secret/shortcode/passkey; finish `lib/mpesa.ts` + verify `app/api/payments/mpesa-callback` source (see code TODO) |
+| Online M-Pesa (Daraja STK) | **Implemented, needs credentials** — without them checkout offers *cash* + *M-Pesa on delivery* only | Sandbox: app + shortcode at developer.safaricom.co.ke, set `MPESA_*` with `MPESA_ENV=sandbox`; go-live: flip to `production` with live shortcode/passkey and an HTTPS `MPESA_CALLBACK_URL` |
 | Maps / GPS | **Off** — ETAs are labelled estimates; no live rider map | Plug a maps provider into tracking + dispatch |
 | SMS/WhatsApp | **Off** — status via in-app tracking | Configure sender + templates |
 | Identity verification | **Phone OTP + staff passwords** — riders/customers sign in with a 6-digit SMS code, staff with scrypt-hashed passwords (see below) | Federated SSO later; rider KYC checks before go-live |

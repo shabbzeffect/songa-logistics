@@ -455,4 +455,35 @@ describe("Songa API journeys", () => {
     });
     assert.equal(badPass.status, 401);
   });
+
+  it("online M-Pesa stays gated until Daraja credentials exist", async () => {
+    // No MPESA_* in this environment: checkout refuses STK gracefully…
+    const stk = await jfetch("/api/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        merchantId, items: [{ productId, qty: 1, selections: {} }],
+        customerName: "Gate Check", phone: "0712345678", city: merchantCity, area: "Kilimani",
+        addressLine: "Hse 7", paymentMethod: "mpesa_stk", idempotencyKey: key(),
+      }),
+    });
+    assert.equal(stk.status, 400);
+
+    // …the callback acknowledges without acting…
+    const cb = await jfetch("/api/payments/mpesa-callback", {
+      method: "POST",
+      body: JSON.stringify({ Body: { stkCallback: { CheckoutRequestID: "ws_CO_123", ResultCode: 0 } } }),
+    });
+    assert.equal(cb.status, 200);
+    assert.equal((cb.body.data as { ignored?: boolean }).ignored, true);
+
+    // …and resend refuses without configuration — validated before any lookup.
+    const short = await jfetch("/api/payments/mpesa-resend", {
+      method: "POST", body: JSON.stringify({ token: "abc" }),
+    });
+    assert.equal(short.status, 400);
+    const resend = await jfetch("/api/payments/mpesa-resend", {
+      method: "POST", body: JSON.stringify({ token: orderToken }),
+    });
+    assert.equal(resend.status, 409);
+  });
 });
