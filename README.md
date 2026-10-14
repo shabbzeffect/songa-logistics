@@ -68,6 +68,8 @@ Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlit
 - **Tracking:** high-entropy token link (`/track/…`), real status history
   (`placed → accepted → preparing → ready → picked up → on the way → delivered`),
   customer cancellation with exactly-once stock restore, live polling, post-delivery star ratings.
+  SMS updates go to the order phone on placed/accepted/on-the-way/delivered/cancelled
+  (provider-gated; the tracking page shows the masked number).
 - **E-commerce parcels:** prohibited-items acknowledgement, server-side estimate (never a guaranteed
   quote), 20 kg cap, pickup-confirmation step, rider assignment, tracking + history. Built for
   online sellers and personal sends alike.
@@ -93,7 +95,7 @@ Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlit
 |---|---|---|
 | Online M-Pesa (Daraja STK) | **Implemented, needs credentials** — without them checkout offers *cash* + *M-Pesa on delivery* only | Sandbox: app + shortcode at developer.safaricom.co.ke, set `MPESA_*` with `MPESA_ENV=sandbox`; go-live: flip to `production` with live shortcode/passkey and an HTTPS `MPESA_CALLBACK_URL` |
 | Maps / GPS | **Off** — ETAs are labelled estimates; no live rider map | Plug a maps provider into tracking + dispatch |
-| SMS/WhatsApp | **Off** — status via in-app tracking | Configure sender + templates |
+| SMS/WhatsApp | **SMS implemented, needs provider** — status texts via Africa's Talking once `SMS_ENABLED=true` (+ key/username); skipped silently until then | WhatsApp templates later |
 | Identity verification | **Phone OTP + staff passwords** — riders/customers sign in with a 6-digit SMS code, staff with scrypt-hashed passwords (see below) | Federated SSO later; rider KYC checks before go-live |
 | Managed Postgres | Embedded PGlite by default | Set `DATABASE_URL` (see Deploying above); schema auto-migrates on boot |
 

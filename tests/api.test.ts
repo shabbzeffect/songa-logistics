@@ -486,4 +486,13 @@ describe("Songa API journeys", () => {
     });
     assert.equal(resend.status, 409);
   });
+
+  it("status SMS stays silent without an SMS provider", async () => {
+    const sent = await jfetch("/api/staff/audit?limit=200&kind=sms.sent", undefined, opsCookie);
+    assert.equal(sent.status, 200);
+    assert.deepEqual((sent.body.data as { events: unknown[] }).events, []);
+    const failed = await jfetch("/api/staff/audit?limit=200&kind=sms.failed", undefined, opsCookie);
+    assert.equal(failed.status, 200);
+    assert.deepEqual((failed.body.data as { events: unknown[] }).events, []);
+  });
 });

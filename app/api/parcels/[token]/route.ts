@@ -6,6 +6,7 @@ import { fail, ok } from "@/lib/api";
 import { getSession } from "@/lib/auth";
 import { canTransitionParcel, type ParcelStatus } from "@/lib/status";
 import { maskPhone } from "@/lib/phone";
+import { notifyParcel, notifyRider } from "@/lib/notify";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
@@ -94,5 +95,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
 
   const verify = await (await getDb()).select().from(s.parcels).where(eq(s.parcels.id, p.id));
   if (!verify[0] || verify[0].status !== to) return fail("Changed just now — refresh and retry.", 409);
+  // Sender/recipient + rider SMS go out after the transition (skipped until configured).
+  await notifyParcel({
+    ref: p.ref, parcelId: p.id, to,
+    pickupArea: p.pickupArea, dropoffArea: p.dropoffArea,
+    senderPhone: p.senderPhone, recipientPhone: p.recipientPhone, recipientName: p.recipientName,
+  });
+  if (riderToSet) {
+    const rr = await db.select().from(s.riders).where(eq(s.riders.id, riderToSet));
+    if (rr[0]) {
+      await notifyRider({
+        phone: rr[0].phone, ref: p.ref, kind: "parcel", entityId: p.id,
+        pickup: p.pickupArea, dropoff: p.dropoffArea,
+      });
+    }
+  }
   return ok({ status: to });
 }

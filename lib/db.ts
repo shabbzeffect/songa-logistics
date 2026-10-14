@@ -12,6 +12,17 @@ import * as schema from "../drizzle/schema";
 export type Db = PgliteDatabase<typeof schema>;
 
 const globalForDb = globalThis as unknown as { __songaDb?: Promise<Db> };
+let pgliteClient: PGlite | null = null;
+let pgPool: Pool | null = null;
+
+/** Release DB handles (scripts, tests, graceful shutdown). Safe to call anytime. */
+export async function closeDb(): Promise<void> {
+  globalForDb.__songaDb = undefined;
+  try { await pgliteClient?.close(); } catch { /* already closed */ }
+  try { await pgPool?.end(); } catch { /* already closed */ }
+  pgliteClient = null;
+  pgPool = null;
+}
 
 /** Minimal raw-client surface shared by PGlite and node-postgres. */
 interface RawClient {
@@ -48,11 +59,12 @@ async function createDb(): Promise<Db> {
     // Hosted Postgres (Neon / Supabase / RDS / local docker). Uses a small pool;
     // on serverless prefer your provider's pooled connection string (PgBouncer).
     const local = /localhost|127\.0\.0\.1/.test(url);
-    const pool = new Pool({
+    pgPool = new Pool({
       connectionString: url,
       max: 5,
       ssl: local ? undefined : { rejectUnauthorized: false },
     });
+    const pool = pgPool;
     const raw: RawClient = {
       // node-postgres runs multi-statement scripts as a simple query.
       query: (sql) => pool.query(sql).then((r) => ({ rows: r.rows })),
@@ -76,7 +88,8 @@ async function createDb(): Promise<Db> {
   }
   const dir = join(process.cwd(), "data", "pgdata");
   mkdirSync(dir, { recursive: true });
-  const client = new PGlite(dir);
+  pgliteClient = new PGlite(dir);
+  const client = pgliteClient;
   await client.waitReady;
   // NOTE: no explicit type arguments here — they collapse drizzle's
   // inferred row types (see drizzle-orm/pglite overloads).

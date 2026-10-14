@@ -6,6 +6,7 @@ import { parcelSchema } from "@/lib/validation";
 import { normalizeKEPhone } from "@/lib/phone";
 import { quoteParcel, type ParcelSize } from "@/lib/parcels";
 import { newIdempotencyKey, newParcelRef, newTrackingToken } from "@/lib/ids";
+import { notifyParcel } from "@/lib/notify";
 
 export async function POST(req: Request) {
   if (!rateLimit("parcel:create", 20)) return fail("Too many requests.", 429);
@@ -61,6 +62,13 @@ export async function POST(req: Request) {
       kind: "parcel.created", entityId: parcel.id, detail: { ref, quote }, actor: "customer",
     });
     await tx.insert(s.idempotencyKeys).values({ key: input.idempotencyKey, scope: "parcel", response });
+  });
+
+  // Sender confirmation SMS (skipped silently until SMS is configured).
+  await notifyParcel({
+    ref, parcelId: ref, to: "requested",
+    pickupArea: input.pickupArea.trim(), dropoffArea: input.dropoffArea.trim(),
+    senderPhone, recipientPhone, recipientName: input.recipientName.trim(),
   });
 
   return ok(response, 201);

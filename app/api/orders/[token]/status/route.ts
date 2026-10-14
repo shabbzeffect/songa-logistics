@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { fail, ok, rateLimit } from "@/lib/api";
 import { getSession } from "@/lib/auth";
 import { canTransitionOrder, type OrderStatus } from "@/lib/status";
+import { notifyOrder, notifyRider } from "@/lib/notify";
 
 const patchSchema = z.object({
   to: z.enum(["placed", "accepted", "preparing", "ready", "picked_up", "on_the_way", "delivered", "cancelled"]),
@@ -51,6 +52,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
       await tx.insert(s.orderEvents).values({ orderId: order.id, status: from, note: `Rider assigned: ${r[0].name}`, actor: actor2 });
       await tx.insert(s.auditEvents).values({ kind: "order.assign", entityId: order.id, detail: { rider: rid }, actor: actor2 });
     });
+    const merch2 = await db2.select({ name: s.merchants.name }).from(s.merchants).where(eq(s.merchants.id, order.merchantId));
+    await notifyRider({
+      phone: r[0].phone, ref: order.ref, kind: "order", entityId: order.id,
+      pickup: merch2[0]?.name ?? order.city, dropoff: order.area,
+    });
     return ok({ status: from, riderId: rid });
   }
 
@@ -70,6 +76,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
   const actor = `${session.role}${session.actorId ? `:${session.actorId.slice(0, 8)}` : ":guest"}`;
 
   try {
+    let assignedRider: string | undefined;
     const result = await db.transaction(async (tx) => {
       if (to === "cancelled") {
         // Conditional update → exactly-once cancellation + stock restore
@@ -119,7 +126,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
         riderToSet = riderId;
       }
       if (session.role === "courier" && !order.riderId && !riderToSet) riderToSet = session.actorId;
-
       const upd = await tx
         .update(s.orders)
         .set({
@@ -143,8 +149,30 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
         kind: "order.status", entityId: order.id,
         detail: { from, to, rider: riderToSet ?? order.riderId }, actor,
       });
+      assignedRider = riderToSet;
       return { status: to };
     });
+    // Customer + rider SMS go out after the transition commits (skipped until configured).
+    const merch = await db.select({ name: s.merchants.name }).from(s.merchants).where(eq(s.merchants.id, order.merchantId));
+    const merchantName = merch[0]?.name ?? "Songa";
+    const notifyRiderId = assignedRider ?? order.riderId;
+    let riderName: string | undefined;
+    let riderPhone: string | undefined;
+    if (notifyRiderId) {
+      const rr = await db.select().from(s.riders).where(eq(s.riders.id, notifyRiderId));
+      riderName = rr[0]?.name;
+      riderPhone = rr[0]?.phone ?? undefined;
+    }
+    await notifyOrder({
+      phone: order.phone, ref: order.ref, merchant: merchantName, total: order.total,
+      orderId: order.id, to, riderName, note: to === "cancelled" ? note || undefined : undefined,
+    });
+    if (assignedRider && riderPhone) {
+      await notifyRider({
+        phone: riderPhone, ref: order.ref, kind: "order", entityId: order.id,
+        pickup: merchantName, dropoff: order.area, merchant: merchantName,
+      });
+    }
     return ok(result);
   } catch (e) {
     const m = e instanceof Error ? e.message : "";

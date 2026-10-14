@@ -8,6 +8,7 @@ import { calcTotals, percentOff, toKES } from "@/lib/money";
 import { newOrderRef, newTrackingToken } from "@/lib/ids";
 import { validateScheduledFor } from "@/lib/time";
 import { initiateStkPush, mpesaConfigured } from "@/lib/mpesa";
+import { notifyOrder } from "@/lib/notify";
 
 class ConflictError extends Error {}
 
@@ -259,6 +260,16 @@ export async function POST(req: Request) {
         stk = { sent: false, message: push.error };
       }
     }
+
+    // Order confirmation SMS (skipped silently until SMS is configured).
+    const merchRows = await db
+      .select({ name: s.merchants.name })
+      .from(s.merchants)
+      .where(eq(s.merchants.id, input.merchantId));
+    await notifyOrder({
+      phone, ref: result.ref, merchant: merchRows[0]?.name ?? "Songa",
+      total: result.total, orderId: result.ref, to: "placed",
+    });
 
     return ok({ ...result, ...(stk ? { stk } : {}) }, 201);
   } catch (e) {

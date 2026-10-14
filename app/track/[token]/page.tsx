@@ -13,7 +13,7 @@ interface TrackData {
     ref: string; status: OrderStatus; paymentMethod: string; paymentStatus: string;
     subtotal: number; discount: number; deliveryFee: number; serviceFee: number;
     tip: number; total: number; promoCode: string; scheduledFor: string | null;
-    area: string; city: string; createdAt: string; prepMinutes: number;
+    area: string; city: string; createdAt: string; prepMinutes: number; notifyPhone: string;
   };
   merchant: { id: string; name: string } | null;
   rider: { name: string; phone: string } | null;
@@ -108,6 +108,7 @@ function TrackInner({ params }: { params: Promise<{ token: string }> }) {
         <p className="text-xs text-stone-500">
           Times are estimates based on the kitchen&apos;s usual prep ({order.prepMinutes} min + rider time) — not guaranteed.
           {data.rider ? <> Your rider is <strong>{data.rider.name}</strong> ({data.rider.phone}).</> : " A rider is assigned once the kitchen accepts."}
+          {" "}Status updates also go by SMS to {order.notifyPhone}.
         </p>
 
         {cancellable && (

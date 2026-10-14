@@ -1,25 +1,66 @@
 /**
- * SMS sending — gated behind a real provider.
+ * SMS sending via Africa's Talking (https://africastalking.com).
  *
- * Until SMS_* env vars are configured AND SMS_ENABLED=true, codes are NOT sent:
- * routes log the code server-side and (outside production) return it in the API
- * response so the flow is testable end to end. Wire a provider (Africa's Talking,
- * Twilio, …) here before public launch.
+ * Gated: until SMS_ENABLED=true with SMS_API_KEY + SMS_USERNAME, nothing is sent
+ * and routes treat notifications as skipped (logged, never fatal).
+ *
+ * Env:
+ *   SMS_ENABLED=true, SMS_API_KEY=<live|sor sandbox key>, SMS_USERNAME=<username|"sandbox">,
+ *   SMS_SENDER=<sender ID or short code — required on live, optional in sandbox>
  */
 
-export function smsConfigured(): boolean {
-  return process.env.SMS_ENABLED === "true" && !!process.env.SMS_API_KEY && !!process.env.SMS_SENDER;
+interface SmsConfig {
+  apiKey: string;
+  username: string;
+  sender: string;
 }
 
-export async function sendSms(
-  _toE164: string,
-  _message: string,
-): Promise<{ ok: true; providerRef: string } | { ok: false; error: string }> {
-  // Real implementation lives here once credentials exist:
-  // 1. POST to the provider with sender ID + API key (server-side only)
-  // 2. Return the provider's message ID; the route stores it for audit
-  if (!smsConfigured()) {
-    return { ok: false, error: "SMS is not configured yet." };
+export function smsConfig(): SmsConfig | null {
+  const { SMS_ENABLED, SMS_API_KEY, SMS_USERNAME, SMS_SENDER } = process.env;
+  if (SMS_ENABLED !== "true" || !SMS_API_KEY || !SMS_USERNAME) return null;
+  return { apiKey: SMS_API_KEY, username: SMS_USERNAME, sender: SMS_SENDER || "SONGA" };
+}
+
+export function smsConfigured(): boolean {
+  return smsConfig() !== null;
+}
+
+/** Africa's Talking wants international format without the +: 2547XXXXXXXX. */
+export function toProviderPhone(e164: string): string | null {
+  const msisdn = e164.replace("+", "");
+  return /^254[17]\d{8}$/.test(msisdn) ? msisdn : null;
+}
+
+export type SmsResult = { ok: true; providerRef: string } | { ok: false; error: string };
+
+export async function sendSms(toE164: string, message: string): Promise<SmsResult> {
+  const cfg = smsConfig();
+  if (!cfg) return { ok: false, error: "SMS is not configured yet." };
+  const to = toProviderPhone(toE164);
+  if (!to || !message.trim()) return { ok: false, error: "Bad recipient or empty message." };
+  try {
+    const form = new URLSearchParams({ username: cfg.username, to, message: message.slice(0, 480), from: cfg.sender });
+    const r = await fetch("https://api.africastalking.com/version1/messaging", {
+      method: "POST",
+      headers: {
+        apiKey: cfg.apiKey,
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const j = (await r.json().catch(() => null)) as {
+      SMSMessageData?: { Recipients?: { status?: string; messageId?: string; cost?: string }[] };
+    } | null;
+    const first = j?.SMSMessageData?.Recipients?.[0];
+    if (r.ok && first?.status === "Success") {
+      return { ok: true, providerRef: first.messageId ?? "" };
+    }
+    console.error("SMS provider rejected", { status: r.status, body: j });
+    return { ok: false, error: "SMS provider rejected the message." };
+  } catch (e) {
+    console.error("SMS send failed", e);
+    return { ok: false, error: "SMS send failed." };
   }
-  return { ok: false, error: "SMS provider call failed. Please retry." };
 }

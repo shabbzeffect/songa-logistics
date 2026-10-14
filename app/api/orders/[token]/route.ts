@@ -30,7 +30,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       deliveryFee: order.deliveryFee, serviceFee: order.serviceFee, tip: order.tip,
       total: order.total, promoCode: order.promoCode, scheduledFor: order.scheduledFor,
       area: order.area, city: order.city, createdAt: order.createdAt,
-      prepMinutes: merchant?.prepMinutes ?? 20,
+      prepMinutes: merchant?.prepMinutes ?? 20, notifyPhone: maskPhone(order.phone),
     },
     merchant: merchant ? { id: merchant.id, name: merchant.name } : null,
     rider,
