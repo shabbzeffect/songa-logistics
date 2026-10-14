@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --color-forest-950: #0b2b21;
+  --color-forest-900: #0e3a2c;
+  --color-forest-800: #14503c;
+  --color-forest-700: #1b6a4f;
+  --color-forest-100: #dcebe2;
+  --color-forest-50: #eef6f0;
+  --color-cream-50: #fbf7ee;
+  --color-cream-100: #f6efe0;
+  --color-cream-200: #efe3cb;
+  --color-coral-500: #f2604c;
+  --color-coral-600: #d94f3d;
+  --color-coral-100: #ffe3dc;
+  --color-sun-400: #f2b544;
+  --font-display: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-cream-50);
+  color: #1d2925;
+  font-family: var(--font-body);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Visible focus for keyboard users */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--color-sun-400);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Tasteful micro-interaction */
+.card-lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -12px rgba(11, 43, 33, 0.35);
+}
+
+/* Demo food-art gradients (no external images needed) */
+.art-stew { background: linear-gradient(135deg, #7a3b1e, #d9822b 60%, #f2b544); }
+.art-rice { background: linear-gradient(135deg, #b97e1f, #f2d06b 60%, #fbf3d9); }
+.art-beans { background: linear-gradient(135deg, #4c5b22, #8aa63d 60%, #d7e6a3); }
+.art-juice { background: linear-gradient(135deg, #c2451e, #f2604c 60%, #ffb199); }
+.art-veg { background: linear-gradient(135deg, #14503c, #2e9e63 60%, #b9e6c9); }
+.art-milk { background: linear-gradient(135deg, #7fa8c9, #dceefb 60%, #ffffff); }
+.art-eggs { background: linear-gradient(135deg, #a9803e, #e8c57c 60%, #faf0d7); }
+.art-grains { background: linear-gradient(135deg, #8a5a24, #d9a441 60%, #f6e3b4); }
+.art-care { background: linear-gradient(135deg, #2b6f8e, #6fc3df 60%, #d8f1fa); }
+.art-flowers { background: linear-gradient(135deg, #a4245c, #f2609c 60%, #ffd3e3); }
+.art-gift { background: linear-gradient(135deg, #5b2b8e, #9a6fd3 60%, #e3d4fa); }
+.art-fish { background: linear-gradient(135deg, #134e6f, #2e9ec2 60%, #bfe6f2); }
+.art-fruit { background: linear-gradient(135deg, #b3541e, #f2b544 60%, #ffe9a8); }
+.art-meal { background: linear-gradient(135deg, #0e3a2c, #1b6a4f 60%, #f2604c); }
