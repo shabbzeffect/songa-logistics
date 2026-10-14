@@ -18,12 +18,18 @@ export default function MerchantPage() {
 }
 
 function Console() {
-  const [tab, setTab] = useState<"orders" | "menu" | "shop">("orders");
+  const [tab, setTab] = useState<"orders" | "menu" | "shop" | "reviews">("orders");
   const [orders, setOrders] = useState<StaffOrder[]>([]);
   const [filter, setFilter] = useState("");
   const [shop, setShop] = useState<{ id: string; name: string; open: boolean; deliveryFee: number; freeOver: number | null; minOrder: number; prepMinutes: number } | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [reviews, setReviews] = useState<{ id: string; rating: number; comment: string; reply: string; at: string }[]>([]);
   const [msg, setMsg] = useState("");
+
+  const loadReviews = useCallback(async () => {
+    const j = await api<{ reviews: typeof reviews }>("/api/staff/reviews");
+    if (j.ok && j.data) setReviews(j.data.reviews);
+  }, []);
 
   const loadOrders = useCallback(async () => {
     const j = await api<{ orders: StaffOrder[] }>(`/api/staff/orders${filter ? `?status=${filter}` : ""}`);
@@ -44,6 +50,15 @@ function Console() {
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
   useEffect(() => { loadShop(); }, [loadShop]);
+  useEffect(() => { if (tab === "reviews") loadReviews(); }, [tab, loadReviews]);
+
+  async function sendReply(id: string, reply: string) {
+    const j = await api(`/api/staff/reviews/${id}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ reply }),
+    });
+    setMsg(j.ok ? "Reply posted — customers see it on your shop page." : (j.error ?? "Couldn't post."));
+    loadReviews();
+  }
 
   async function patchProduct(id: string, body: object) {
     const j = await api(`/api/staff/products/${id}`, {
@@ -84,7 +99,7 @@ function Console() {
     <div className="space-y-5">
       <PageHead title="Merchant console" sub={shop ? shop.name : "Your shop workspace"} />
       <div className="flex gap-2" role="tablist" aria-label="Merchant sections">
-        {(["orders", "menu", "shop"] as const).map((t) => (
+        {(["orders", "menu", "shop", "reviews"] as const).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
             className={`rounded-xl px-4 py-2 text-sm font-bold capitalize ${tab === t ? "bg-forest-900 text-white" : "bg-white"}`}>
             {t}
@@ -169,6 +184,47 @@ function Console() {
           </button>
         </div>
       )}
+
+      {tab === "reviews" && (
+        <div className="space-y-2">
+          {reviews.length === 0 ? (
+            <EmptyState title="No reviews yet" hint="Customer ratings for delivered orders land here — reply to keep the conversation warm." />
+          ) : reviews.map((r) => (
+            <ReplyRow key={r.id} r={r} onReply={sendReply} />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ReplyRow({ r, onReply }: {
+  r: { id: string; rating: number; comment: string; reply: string; at: string };
+  onReply: (id: string, reply: string) => void;
+}) {
+  const [text, setText] = useState(r.reply);
+  return (
+    <article className="rounded-2xl bg-white p-4 text-sm shadow-sm">
+      <p aria-label={`Rated ${r.rating} out of 5`}>
+        <span aria-hidden className="text-sun-400">{"★".repeat(r.rating)}</span>
+        <span aria-hidden className="text-stone-300">{"★".repeat(5 - r.rating)}</span>
+        <span className="ml-2 text-xs text-stone-500">{new Date(r.at).toLocaleDateString("en-KE")}</span>
+      </p>
+      {r.comment && <p className="mt-1 text-stone-700">“{r.comment}”</p>}
+      <label className="mt-2 block">
+        <span className="mb-1 block text-xs font-bold uppercase text-stone-500">Your reply</span>
+        <textarea
+          value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={2}
+          placeholder="Asante for the feedback — …"
+          className="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm"
+        />
+      </label>
+      <button
+        onClick={() => text.trim() && onReply(r.id, text.trim())}
+        className="mt-2 rounded-xl bg-forest-900 px-4 py-2 text-sm font-bold text-white"
+      >
+        {r.reply ? "Update reply" : "Post reply"}
+      </button>
+    </article>
   );
 }

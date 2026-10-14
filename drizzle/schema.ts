@@ -106,6 +106,9 @@ export const riders = pgTable("riders", {
   city: text("city").notNull(),
   active: boolean("active").notNull().default(true), // availability toggle
   verified: boolean("verified").notNull().default(true),
+  kycStatus: text("kyc_status").notNull().default("pending"), // pending|submitted|approved|rejected
+  kycNote: text("kyc_note").notNull().default(""),
+  kycDocs: jsonb("kyc_docs").notNull().default([]), // [{type, ref}] — ID + licence refs, never photos in demo
 });
 
 export const orders = pgTable(
@@ -278,6 +281,8 @@ export const reviews = pgTable(
     merchantId: uuid("merchant_id").notNull(),
     rating: integer("rating").notNull(), // 1..5
     comment: text("comment").notNull().default(""),
+    reply: text("reply").notNull().default(""), // merchant/ops response
+    repliedAt: timestamp("replied_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("reviews_merchant_idx").on(t.merchantId)],

@@ -16,7 +16,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .orderBy(desc(s.reviews.createdAt))
     .limit(20);
   return ok({
-    reviews: rows.map((r) => ({ rating: r.rating, comment: r.comment, at: r.createdAt })),
+    reviews: rows.map((r) => ({ rating: r.rating, comment: r.comment, reply: r.reply, at: r.createdAt })),
     count: merch[0].ratingsCount,
     rating: merch[0].rating / 10,
   });

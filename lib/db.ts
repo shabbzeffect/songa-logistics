@@ -35,6 +35,7 @@ const MIGRATIONS: { version: string; file: string }[] = [
   { version: "0002", file: "0002_reviews.sql" },
   { version: "0003", file: "0003_categories.sql" },
   { version: "0004", file: "0004_auth.sql" },
+  { version: "0005", file: "0005_kyc_reviews.sql" },
 ];
 
 async function migrate(raw: RawClient): Promise<void> {

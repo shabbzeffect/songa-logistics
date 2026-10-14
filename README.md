@@ -58,7 +58,8 @@ Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlit
   category/fee/rating/open filters, sorting, collections (Quick lunch, Market run, Medical
   courier, Highly rated), saved shops (♥), empty states with next steps.
 - **Storefront:** real open/closed status, fees/minimums, sections, stock flags, dietary/allergen
-  notes, required/optional modifier groups with **server-side repricing**, customer reviews.
+  notes, required/optional modifier groups with **server-side repricing**, customer reviews
+  with merchant replies.
 - **Basket → checkout:** single-merchant basket with replace confirmation, free-delivery progress,
   validated address + `07…/01…/+254…` phones, itemised totals, promo codes, tips, scheduled orders
   (90-min cut-off). Order refs look like `SG-XXXXXX`. Order creation is **transactional +
@@ -80,12 +81,15 @@ Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlit
 - **Medical courier:** pharmacy-essentials catalogue with sealed, priority handling; prescription
   orders are verified with a pharmacist by phone before dispatch (see `/support` policy).
 - **Merchant console** (`/merchant`): order queue with legal transitions, menu CRUD,
-  pause/unpause, price/stock edits, shop open-hours/fees/prep-time.
-- **Courier workspace** (`/courier`): online toggle, assigned jobs only (customer phones stay
-  masked elsewhere), accept→deliver steps, proof-of-delivery note, per-drop earnings estimate.
-- **Operations HQ** (`/hq`): live overview, order/parcel dispatch with rider assignment and
-  per-rider workload, merchant approval + catalogue moderation, promo management with on/off
-  toggles, partner-lead inbox, audit trail for every money/status change.
+  pause/unpause, price/stock edits, shop open-hours/fees/prep-time, review replies.
+- **Courier workspace** (`/courier`): online toggle, KYC document submission, assigned jobs only
+  (customer phones stay masked elsewhere), accept→deliver steps, proof-of-delivery note,
+  per-drop earnings estimate. Dispatch unlocks only for KYC-approved riders.
+- **Operations HQ** (`/hq`): live overview, revenue analytics (delivered revenue, AOV, cancel
+  rate, daily bars, city/vertical splits, top shops), order/parcel dispatch with rider assignment
+  and per-rider workload, rider KYC review queue, merchant approval + catalogue moderation,
+  promo management with on/off toggles, partner-lead inbox, audit trail for every
+  money/status change.
 - **Partners** (`/partner`): kitchens, markets/shops, pharmacies, online sellers and riders —
   enquiries surface in HQ.
 

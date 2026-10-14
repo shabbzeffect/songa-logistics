@@ -64,6 +64,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
     if (!rid) return fail("Choose a rider to assign.", 400);
     const r = await db.select().from(s.riders).where(eq(s.riders.id, rid));
     if (!r[0]?.verified) return fail("Rider isn't verified.", 400);
+    if (r[0].kycStatus !== "approved") return fail("Rider isn't cleared for dispatch yet (KYC pending).", 400);
     if (r[0].city !== p.city) return fail("Rider serves a different city.", 400);
     riderToSet = rid;
   }

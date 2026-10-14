@@ -232,7 +232,7 @@ function ModifierDialog({
 }
 
 function ShopReviews({ id }: { id: string }) {
-  const [reviews, setReviews] = useState<{ rating: number; comment: string; at: string }[]>([]);
+  const [reviews, setReviews] = useState<{ rating: number; comment: string; reply: string; at: string }[]>([]);
   useEffect(() => {
     fetch(`/api/merchants/${id}/reviews`)
       .then((r) => r.json())
@@ -254,6 +254,11 @@ function ShopReviews({ id }: { id: string }) {
               <span className="ml-2 text-xs text-stone-500">{new Date(r.at).toLocaleDateString("en-KE")}</span>
             </p>
             {r.comment && <p className="mt-1 text-stone-700">“{r.comment}”</p>}
+            {r.reply && (
+              <p className="mt-2 rounded-xl bg-cream-100 px-3 py-2 text-stone-700">
+                <span className="font-bold">Shop reply: </span>“{r.reply}”
+              </p>
+            )}
           </li>
         ))}
       </ul>

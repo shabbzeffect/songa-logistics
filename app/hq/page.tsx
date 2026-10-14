@@ -20,7 +20,7 @@ export default function HqPage() {
 }
 
 function Hq() {
-  const [tab, setTab] = useState<"today" | "orders" | "parcels" | "shops" | "promos" | "leads" | "riders" | "audit">("today");
+  const [tab, setTab] = useState<"today" | "orders" | "parcels" | "shops" | "promos" | "leads" | "riders" | "audit" | "analytics">("today");
   const [ov, setOv] = useState<Overview | null>(null);
   const [orders, setOrders] = useState<StaffOrder[]>([]);
   const [status, setStatus] = useState("");
@@ -28,11 +28,21 @@ function Hq() {
   const [shops, setShops] = useState<{ id: string; name: string; city: string; category: string; open: boolean; approved: boolean; deliveryFee: number }[]>([]);
   const [promos, setPromos] = useState<{ code: string; label: string; active: boolean; used: number; maxUses: number | null }[]>([]);
   const [leads, setLeads] = useState<{ id: string; kind: string; businessName: string; contactName: string; phone: string; city: string; message: string; handled: boolean }[]>([]);
-  const [riders, setRiders] = useState<{ id: string; name: string; city: string; active: boolean; verified: boolean }[]>([]);
+  const [riders, setRiders] = useState<{ id: string; name: string; city: string; active: boolean; verified: boolean; kycStatus: string; kycNote?: string }[]>([]);
   const [workload, setWorkload] = useState<Record<string, { activeOrders: number; activeParcels: number }>>({});
   const [audit, setAudit] = useState<{ id: string; kind: string; entityId: string; detail: unknown; actor: string; at: string }[]>([]);
   const [auditKinds, setAuditKinds] = useState<string[]>([]);
   const [auditKind, setAuditKind] = useState("");
+  const [anDays, setAnDays] = useState(30);
+  const [anCity, setAnCity] = useState("");
+  const [analytics, setAnalytics] = useState<{
+    orders: { revenue: number; count: number; cancelled: number; cancelRate: number; discount: number; aov: number };
+    parcels: { revenue: number; count: number };
+    series: { day: string; revenue: number; orders: number }[];
+    byCity: { city: string; revenue: number; orders: number }[];
+    byCategory: { category: string; revenue: number; orders: number }[];
+    topShops: { id: string; name: string; revenue: number; orders: number }[];
+  } | null>(null);
   const [msg, setMsg] = useState("");
 
   const loadAll = useCallback(async () => {
@@ -70,6 +80,20 @@ function Hq() {
   useEffect(() => { loadAll(); const t = setInterval(loadAll, 15000); return () => clearInterval(t); }, [loadAll]);
   useEffect(() => { loadAudit(); }, [loadAudit]);
 
+  const loadAnalytics = useCallback(async () => {
+    const j = await api<{ orders: NonNullable<typeof analytics>["orders"]; parcels: NonNullable<typeof analytics>["parcels"]; series: NonNullable<typeof analytics>["series"]; byCity: NonNullable<typeof analytics>["byCity"]; byCategory: NonNullable<typeof analytics>["byCategory"]; topShops: NonNullable<typeof analytics>["topShops"] }>(
+      `/api/staff/analytics?days=${anDays}${anCity ? `&city=${anCity}` : ""}`,
+    );
+    if (j.ok && j.data) {
+      setAnalytics({
+        orders: j.data.orders, parcels: j.data.parcels, series: j.data.series,
+        byCity: j.data.byCity, byCategory: j.data.byCategory, topShops: j.data.topShops,
+      });
+    }
+  }, [anDays, anCity]);
+
+  useEffect(() => { if (tab === "analytics") loadAnalytics(); }, [tab, loadAnalytics]);
+
   async function parcelGo(token: string, to: string, riderId?: string) {
     const j = await api(`/api/parcels/${token}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
@@ -103,7 +127,17 @@ function Hq() {
     loadAll();
   }
 
-  async function addPromo(e: React.FormEvent<HTMLFormElement>) {    e.preventDefault();
+  async function reviewKyc(id: string, status: "approved" | "rejected", note = "") {
+    const j = await api("/api/staff/riders/kyc", {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, status, note }),
+    });
+    setMsg(j.ok ? `Rider KYC ${status}.` : (j.error ?? "Failed"));
+    loadAll();
+  }
+
+  async function addPromo(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const j = await api("/api/staff/promos", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -123,7 +157,7 @@ function Hq() {
     <div className="space-y-5">
       <PageHead title="Operations HQ" sub="Shops, orders in motion, riders, parcels and partner leads" />
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="HQ sections">
-        {(["today", "orders", "parcels", "shops", "promos", "leads", "riders", "audit"] as const).map((t) => (
+        {(["today", "orders", "parcels", "shops", "promos", "leads", "riders", "audit", "analytics"] as const).map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
             className={`rounded-xl px-4 py-2 text-sm font-bold capitalize ${tab === t ? "bg-forest-950 text-white" : "bg-white"}`}>
             {t}{t === "leads" && ov && ov.openLeads > 0 ? ` (${ov.openLeads})` : ""}
@@ -242,18 +276,27 @@ function Hq() {
             const w = workload[r.id];
             const load = w ? w.activeOrders + w.activeParcels : null;
             return (
-              <article key={r.id} className="flex items-center gap-2 rounded-2xl bg-white p-4 text-sm shadow-sm">
-                <p className="flex-1">
-                  <strong>{r.name}</strong> <span className="text-stone-500">· {r.city}</span>
-                  {load != null && (
-                    <span className="ml-2 text-xs font-semibold text-stone-600">
-                      · {w!.activeOrders} order{w!.activeOrders === 1 ? "" : "s"} + {w!.activeParcels} parcel{w!.activeParcels === 1 ? "" : "s"} active
-                    </span>
-                  )}
-                </p>
-                {load != null && load >= 5 && <Badge tone="coral">Busy</Badge>}
-                <Badge tone={r.active ? "green" : "sand"}>{r.active ? "Online" : "Offline"}</Badge>
-                {!r.verified && <Badge tone="red">Unverified</Badge>}
+              <article key={r.id} className="rounded-2xl bg-white p-4 text-sm shadow-sm">
+                <div className="flex items-center gap-2">
+                  <p className="flex-1">
+                    <strong>{r.name}</strong> <span className="text-stone-500">· {r.city}</span>
+                    {load != null && (
+                      <span className="ml-2 text-xs font-semibold text-stone-600">
+                        · {w!.activeOrders} order{w!.activeOrders === 1 ? "" : "s"} + {w!.activeParcels} parcel{w!.activeParcels === 1 ? "" : "s"} active
+                      </span>
+                    )}
+                  </p>
+                  {load != null && load >= 5 && <Badge tone="coral">Busy</Badge>}
+                  <Badge tone={r.kycStatus === "approved" ? "green" : r.kycStatus === "rejected" ? "red" : "sand"}>
+                    KYC {r.kycStatus}
+                  </Badge>
+                  <Badge tone={r.active ? "green" : "sand"}>{r.active ? "Online" : "Offline"}</Badge>
+                  {!r.verified && <Badge tone="red">Unverified</Badge>}
+                </div>
+                {r.kycNote && <p className="mt-1 text-xs text-stone-500">KYC note: {r.kycNote}</p>}
+                {r.kycStatus !== "approved" && (
+                  <KycReviewRow id={r.id} status={r.kycStatus} onReview={reviewKyc} />
+                )}
               </article>
             );
           })}
@@ -280,6 +323,16 @@ function Hq() {
             ))}
         </div>
       )}
+
+      {tab === "analytics" && (
+        <AnalyticsTab
+          data={analytics}
+          days={anDays}
+          setDays={setAnDays}
+          city={anCity}
+          setCity={setAnCity}
+        />
+      )}
     </div>
   );
 }
@@ -291,6 +344,27 @@ const PARCEL_NEXT: Record<string, string[]> = {
   picked_up: ["in_transit"],
   in_transit: ["delivered"],
 };
+
+function KycReviewRow({ id, status, onReview }: {
+  id: string; status: string; onReview: (id: string, status: "approved" | "rejected", note?: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-xs text-stone-500">KYC {status}:</span>
+      <button onClick={() => onReview(id, "approved")} className="rounded-lg bg-forest-900 px-3 py-1.5 text-xs font-bold text-white">
+        Approve
+      </button>
+      <input
+        value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason (required to reject)"
+        className="min-w-44 flex-1 rounded-lg border border-stone-300 px-2 py-1.5 text-xs" aria-label={`Rejection reason`}
+      />
+      <button onClick={() => onReview(id, "rejected", note)} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-bold text-red-700">
+        Reject
+      </button>
+    </div>
+  );
+}
 
 function ParcelRow({ p, riders, onGo }: {
   p: { ref: string; token: string; status: string; quote: number; pickupArea: string; dropoffArea: string; contents: string; recipientName: string; riderId: string | null };
@@ -326,5 +400,126 @@ function ParcelRow({ p, riders, onGo }: {
         ))}
       </div>
     </article>
+  );
+}
+
+type AnalyticsData = {
+  orders: { revenue: number; count: number; cancelled: number; cancelRate: number; discount: number; aov: number };
+  parcels: { revenue: number; count: number };
+  series: { day: string; revenue: number; orders: number }[];
+  byCity: { city: string; revenue: number; orders: number }[];
+  byCategory: { category: string; revenue: number; orders: number }[];
+  topShops: { id: string; name: string; revenue: number; orders: number }[];
+};
+
+function AnalyticsTab({ data, days, setDays, city, setCity }: {
+  data: AnalyticsData | null; days: number; setDays: (d: number) => void;
+  city: string; setCity: (c: string) => void;
+}) {
+  const maxRevenue = Math.max(1, ...(data?.series.map((s) => s.revenue) ?? [1]));
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+        <span>Last</span>
+        {[7, 30, 90].map((d) => (
+          <button key={d} onClick={() => setDays(d)}
+            className={`rounded-xl px-3 py-1.5 ${days === d ? "bg-forest-950 text-white" : "bg-white"}`}>
+            {d} days
+          </button>
+        ))}
+        <label className="ml-2 flex items-center gap-1.5">City
+          <select value={city} onChange={(e) => setCity(e.target.value)} className="rounded-lg border border-stone-300 px-2 py-1.5">
+            <option value="">All cities</option>
+            <option value="nairobi">Nairobi</option>
+            <option value="mombasa">Mombasa</option>
+            <option value="kisumu">Kisumu</option>
+          </select>
+        </label>
+      </div>
+
+      {!data ? (
+        <p className="text-sm text-stone-500" role="status">Loading analytics…</p>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-4">
+            {[
+              ["Delivered revenue", formatKES(data.orders.revenue)],
+              ["Delivered orders", String(data.orders.count)],
+              ["Avg order value", formatKES(data.orders.aov)],
+              ["Cancel rate", `${data.orders.cancelRate}%`],
+              ["Promo discounts", formatKES(data.orders.discount)],
+              ["Parcel revenue", formatKES(data.parcels.revenue)],
+              ["Parcels delivered", String(data.parcels.count)],
+              ["Combined revenue", formatKES(data.orders.revenue + data.parcels.revenue)],
+            ].map(([k, v]) => (
+              <div key={k} className="rounded-2xl bg-white p-4 shadow-sm">
+                <p className="text-xs font-bold uppercase text-stone-500">{k}</p>
+                <p className="font-display text-2xl font-black text-forest-950">{v}</p>
+              </div>
+            ))}
+          </div>
+
+          <section className="rounded-2xl bg-white p-5 shadow-sm" aria-label="Daily delivered revenue">
+            <h3 className="font-display font-extrabold text-forest-950">Daily delivered revenue</h3>
+            {data.series.every((s) => s.revenue === 0) ? (
+              <p className="mt-2 text-sm text-stone-500">No delivered orders in this window yet — revenue bars appear as deliveries complete.</p>
+            ) : (
+              <div className="mt-3 flex h-36 items-end gap-1" role="img" aria-label={`Revenue peaked at ${formatKES(maxRevenue)}`}>
+                {data.series.map((s) => (
+                  <div key={s.day} className="flex-1" title={`${s.day}: ${formatKES(s.revenue)} (${s.orders} orders)`}>
+                    <div className="rounded-t bg-forest-700" style={{ height: `${Math.max(2, Math.round((s.revenue / maxRevenue) * 130))}px` }} />
+                  </div>
+                ))}
+              </div>
+            )}
+            {data.series.length > 0 && (
+              <div className="mt-1 flex justify-between text-[11px] text-stone-500">
+                <span>{data.series[0].day}</span>
+                <span>{data.series[data.series.length - 1].day}</span>
+              </div>
+            )}
+          </section>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <section className="rounded-2xl bg-white p-4 shadow-sm">
+              <h3 className="font-display font-extrabold text-forest-950">By city</h3>
+              <ul className="mt-2 space-y-1 text-sm">
+                {data.byCity.length === 0 && <li className="text-stone-500">No data yet.</li>}
+                {data.byCity.map((c) => (
+                  <li key={c.city} className="flex justify-between gap-2">
+                    <span className="capitalize">{c.city} <span className="text-stone-400">({c.orders})</span></span>
+                    <Price value={c.revenue} className="font-bold" />
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section className="rounded-2xl bg-white p-4 shadow-sm">
+              <h3 className="font-display font-extrabold text-forest-950">By vertical</h3>
+              <ul className="mt-2 space-y-1 text-sm">
+                {data.byCategory.length === 0 && <li className="text-stone-500">No data yet.</li>}
+                {data.byCategory.map((c) => (
+                  <li key={c.category} className="flex justify-between gap-2">
+                    <span className="capitalize">{c.category} <span className="text-stone-400">({c.orders})</span></span>
+                    <Price value={c.revenue} className="font-bold" />
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section className="rounded-2xl bg-white p-4 shadow-sm">
+              <h3 className="font-display font-extrabold text-forest-950">Top shops</h3>
+              <ul className="mt-2 space-y-1 text-sm">
+                {data.topShops.length === 0 && <li className="text-stone-500">No data yet.</li>}
+                {data.topShops.map((m) => (
+                  <li key={m.id} className="flex justify-between gap-2">
+                    <span>{m.name} <span className="text-stone-400">({m.orders})</span></span>
+                    <Price value={m.revenue} className="font-bold" />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

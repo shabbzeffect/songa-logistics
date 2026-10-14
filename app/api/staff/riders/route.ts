@@ -10,10 +10,13 @@ export async function GET() {
   if ("error" in gate) return fail(gate.error, gate.status);
   const db = await getDb();
   const rows = await db.select().from(s.riders);
-  // Couriers/merchants see names + availability; full phones only for ops.
+  // Couriers/merchants see names + availability; full phones and KYC docs only for ops.
   const pub = rows.map((r) => ({
     id: r.id, name: r.name, city: r.city, active: r.active, verified: r.verified,
+    kycStatus: r.kycStatus,
     phone: gate.session.role === "ops" ? r.phone : undefined,
+    kycNote: gate.session.role === "ops" ? r.kycNote : undefined,
+    kycDocs: gate.session.role === "ops" ? r.kycDocs : undefined,
   }));
   return ok({ riders: pub });
 }

@@ -164,7 +164,7 @@ function TrackInner({ params }: { params: Promise<{ token: string }> }) {
 }
 
 function ReviewBox({ token }: { token: string }) {
-  const [existing, setExisting] = useState<{ rating: number; comment: string } | null>(null);
+  const [existing, setExisting] = useState<{ rating: number; comment: string; reply?: string } | null>(null);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
@@ -201,6 +201,11 @@ function ReviewBox({ token }: { token: string }) {
           <span className="ml-2 font-bold">{existing.rating}/5</span>
         </p>
         {existing.comment && <p className="mt-1 text-sm text-stone-600">“{existing.comment}”</p>}
+        {existing.reply && (
+          <p className="mt-2 rounded-xl bg-cream-100 px-3 py-2 text-sm text-stone-700">
+            <span className="font-bold">Shop reply: </span>“{existing.reply}”
+          </p>
+        )}
         {msg && <p className="mt-1 text-sm font-semibold" role="status">{msg}</p>}
       </div>
     );

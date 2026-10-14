@@ -35,6 +35,7 @@ let productPrice = 0;
 let productStock = 0;
 let orderToken = "";
 let orderRef = "";
+let historyToken = "";
 let opsCookie = "";
 
 describe("Songa API journeys", () => {
@@ -434,6 +435,7 @@ describe("Songa API journeys", () => {
     });
     assert.equal(placed.status, 201);
     const ref = (placed.body.data as { ref: string }).ref;
+    historyToken = (placed.body.data as { trackingToken: string }).trackingToken;
 
     const hist = await jfetch("/api/me/orders", undefined, custCookie);
     assert.equal(hist.status, 200);
@@ -494,5 +496,136 @@ describe("Songa API journeys", () => {
     const failed = await jfetch("/api/staff/audit?limit=200&kind=sms.failed", undefined, opsCookie);
     assert.equal(failed.status, 200);
     assert.deepEqual((failed.body.data as { events: unknown[] }).events, []);
+  });
+
+  it("rider KYC: submit → dispatch blocked until approved", async () => {
+    // OTP login as the seeded Nairobi rider.
+    const req = await jfetch("/api/auth/otp/request", {
+      method: "POST", body: JSON.stringify({ phone: "0722111222", purpose: "login_rider" }),
+    });
+    const demoCode = (req.body.data as { demoCode?: string }).demoCode!;
+    const good = await jfetch("/api/auth/otp/verify", {
+      method: "POST", body: JSON.stringify({ phone: "0722111222", code: demoCode, purpose: "login_rider" }),
+    });
+    const riderCookie = (good.setCookie ?? "").split(";")[0];
+
+    const anon = await jfetch("/api/riders/kyc", {
+      method: "POST", body: JSON.stringify({ idNumber: "12345678", licenseNumber: "DL-999" }),
+    });
+    assert.equal(anon.status, 403);
+    const badDocs = await jfetch("/api/riders/kyc", {
+      method: "POST", body: JSON.stringify({ idNumber: "x", licenseNumber: "y" }),
+    }, riderCookie);
+    assert.equal(badDocs.status, 400);
+    const sub = await jfetch("/api/riders/kyc", {
+      method: "POST", body: JSON.stringify({ idNumber: "12345678", licenseNumber: "DL-999" }),
+    }, riderCookie);
+    assert.equal(sub.status, 200);
+
+    const rl = await jfetch("/api/staff/riders", undefined, opsCookie);
+    const brian = (rl.body.data as { riders: { id: string; name: string; city: string; kycStatus: string }[] }).riders.find((r) => r.name === "Brian Otieno")!;
+    assert.equal(brian.kycStatus, "submitted");
+
+    // Unapproved riders cannot be dispatched.
+    const c = await jfetch("/api/parcels", {
+      method: "POST",
+      body: JSON.stringify({
+        senderName: "KYC Probe", senderPhone: "0712345678", pickupArea: "Kilimani", pickupAddress: "Hse 1",
+        recipientName: "Brian T", recipientPhone: "0733445566", dropoffArea: "Westlands", dropoffAddress: "Hse 2",
+        city: "nairobi", contents: "KYC test docs", size: "small", weightKg: 1,
+        prohibitedAck: true, idempotencyKey: key(),
+      }),
+    });
+    assert.equal(c.status, 201);
+    const ptoken = (c.body.data as { trackingToken: string }).trackingToken;
+    assert.equal((await jfetch(`/api/parcels/${ptoken}`, {
+      method: "PATCH", body: JSON.stringify({ to: "confirmed" }),
+    }, opsCookie)).status, 200);
+    const blocked = await jfetch(`/api/parcels/${ptoken}`, {
+      method: "PATCH", body: JSON.stringify({ to: "assigned", riderId: brian.id }),
+    }, opsCookie);
+    assert.equal(blocked.status, 400);
+
+    // Ops review validation, then approval re-opens dispatch.
+    const noNote = await jfetch("/api/staff/riders/kyc", {
+      method: "PATCH", body: JSON.stringify({ id: brian.id, status: "rejected", note: "" }),
+    }, opsCookie);
+    assert.equal(noNote.status, 400);
+    const ghost = await jfetch("/api/staff/riders/kyc", {
+      method: "PATCH", body: JSON.stringify({ id: "00000000-0000-0000-0000-000000000000", status: "approved" }),
+    }, opsCookie);
+    assert.equal(ghost.status, 404);
+    assert.equal((await jfetch("/api/staff/riders/kyc", {
+      method: "PATCH", body: JSON.stringify({ id: brian.id, status: "approved" }),
+    }, opsCookie)).status, 200);
+    assert.equal((await jfetch(`/api/parcels/${ptoken}`, {
+      method: "PATCH", body: JSON.stringify({ to: "assigned", riderId: brian.id }),
+    }, opsCookie)).status, 200);
+  });
+
+  it("reviews accept merchant replies and show them publicly", async () => {
+    // Walk the history order to delivered so it can be reviewed.
+    for (const to of ["accepted", "preparing", "ready", "picked_up", "on_the_way", "delivered"]) {
+      const r = await jfetch(`/api/orders/${historyToken}/status`, {
+        method: "PATCH", body: JSON.stringify({ to }),
+      }, opsCookie);
+      assert.equal(r.status, 200);
+    }
+    const rv = await jfetch(`/api/orders/${historyToken}/reviews`, {
+      method: "POST", body: JSON.stringify({ rating: 5, comment: "Reply-path review" }),
+    });
+    assert.equal(rv.status, 201);
+    const reviewId = (rv.body.data as { review: { id: string } }).review.id;
+
+    // Reply guards: anon, empty, unknown.
+    assert.equal((await jfetch(`/api/staff/reviews/${reviewId}`, {
+      method: "PATCH", body: JSON.stringify({ reply: "Hi" }),
+    })).status, 403);
+    assert.equal((await jfetch(`/api/staff/reviews/${reviewId}`, {
+      method: "PATCH", body: JSON.stringify({ reply: "" }),
+    }, opsCookie)).status, 400);
+    assert.equal((await jfetch("/api/staff/reviews/00000000-0000-0000-0000-000000000000", {
+      method: "PATCH", body: JSON.stringify({ reply: "Hi" }),
+    }, opsCookie)).status, 404);
+
+    // A different shop's merchant cannot reply here.
+    const other = await jfetch("/api/merchants?city=kisumu");
+    const otherShop = (other.body.data.merchants as { id: string }[])[0];
+    const mLogin = await jfetch("/api/auth", {
+      method: "POST", body: JSON.stringify({ role: "merchant", actorId: otherShop.id }),
+    });
+    const merchantCookie = (mLogin.setCookie ?? "").split(";")[0];
+    assert.equal((await jfetch(`/api/staff/reviews/${reviewId}`, {
+      method: "PATCH", body: JSON.stringify({ reply: "Mine!" }),
+    }, merchantCookie)).status, 403);
+
+    // Ops reply lands, and the storefront shows it.
+    assert.equal((await jfetch(`/api/staff/reviews/${reviewId}`, {
+      method: "PATCH", body: JSON.stringify({ reply: "Asante for the kind words!" }),
+    }, opsCookie)).status, 200);
+    const pub = await jfetch(`/api/merchants/${merchantId}/reviews`);
+    const shown = (pub.body.data as { reviews: { comment: string; reply: string }[] }).reviews.find((r) => r.comment === "Reply-path review");
+    assert.equal(shown?.reply, "Asante for the kind words!");
+  });
+
+  it("HQ analytics reports revenue, series and splits", async () => {
+    assert.equal((await jfetch("/api/staff/analytics")).status, 403);
+    const a = await jfetch("/api/staff/analytics?days=7", undefined, opsCookie);
+    assert.equal(a.status, 200);
+    const d = a.body.data as {
+      orders: { revenue: number; count: number; cancelled: number; cancelRate: number; discount: number; aov: number };
+      parcels: { revenue: number; count: number };
+      series: { day: string; revenue: number; orders: number }[];
+      byCity: { city: string; revenue: number; orders: number }[];
+      byCategory: { category: string; revenue: number; orders: number }[];
+      topShops: { id: string; name: string; revenue: number; orders: number }[];
+    };
+    assert.equal(d.series.length, 7);
+    assert.ok(d.orders.revenue > 0 && d.orders.count >= 1);
+    assert.ok(d.orders.aov > 0);
+    assert.ok(d.topShops.length >= 1 && d.topShops[0].revenue > 0);
+    const filtered = await jfetch(`/api/staff/analytics?days=7&city=${merchantCity}`, undefined, opsCookie);
+    assert.equal(filtered.status, 200);
+    assert.ok((filtered.body.data as typeof d).orders.revenue > 0);
   });
 });

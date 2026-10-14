@@ -45,6 +45,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
     const db2 = await getDb();
     const r = await db2.select().from(s.riders).where(eq(s.riders.id, rid));
     if (!r[0]?.verified) return fail("That rider isn't verified.", 400);
+    if (r[0].kycStatus !== "approved") return fail("That rider isn't cleared for dispatch yet (KYC pending).", 400);
     if (r[0].city !== order.city) return fail("That rider serves a different city.", 400);
     const actor2 = `${session.role}:${(session.actorId ?? "staff").slice(0, 8)}`;
     await db2.transaction(async (tx) => {
@@ -121,6 +122,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
         const r = await tx.select().from(s.riders).where(eq(s.riders.id, riderId));
         const rider = r[0];
         if (!rider || !rider.verified) throw new Error("bad-rider");
+        if (rider.kycStatus !== "approved") throw new Error("rider-kyc");
         if (rider.city !== order.city) throw new Error("rider-city");
         if (session.role === "courier" && session.actorId !== riderId) throw new Error("forbidden-rider");
         riderToSet = riderId;
@@ -178,6 +180,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ token: string
     const m = e instanceof Error ? e.message : "";
     if (m === "race") return fail("This order changed just now. Refresh and try again.", 409);
     if (m === "bad-rider") return fail("That rider isn't verified.", 400);
+    if (m === "rider-kyc") return fail("That rider isn't cleared for dispatch yet (KYC pending).", 400);
     if (m === "rider-city") return fail("That rider serves a different city.", 400);
     if (m === "forbidden-rider") return fail("You can't assign this rider.", 403);
     console.error("order patch failed", e);
