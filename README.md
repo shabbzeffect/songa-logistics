@@ -31,6 +31,27 @@ pnpm build         # production build check
 BASE_URL=http://localhost:3000 pnpm test:api   # API integration tests (needs dev server)
 ```
 
+## Deploying to production (Vercel + hosted Postgres)
+
+The app runs anywhere Node does, but the supported path is Vercel + Neon:
+
+1. **Database** — create a Postgres database (Neon free tier works). Copy the **pooled**
+   connection string (PgBouncer) for serverless use.
+2. **Vercel** — import the repo, then set environment variables:
+   | Variable | Required | Notes |
+   |---|---|---|
+   | `DATABASE_URL` | Yes | Pooled hosted-Postgres URL. Without it the app uses embedded PGlite, which has no persistent disk on serverless and refuses to boot on Vercel. |
+   | `SESSION_SECRET` | Yes | Long random string (`openssl rand -base64 48`). The app throws at runtime without it in production. |
+   | `NEXT_PUBLIC_WHATSAPP` / `NEXT_PUBLIC_SUPPORT_PHONE` | No | Support contacts in footer + `/support`. |
+   | `MPESA_*` | Later | Leave unset until Daraja go-live (see table below). |
+3. **Deploy.** On first boot the app auto-applies `drizzle/*.sql` (tracked in
+   `schema_migrations`) — no manual migration step. **Demo seed data is never inserted in
+   production** (`NODE_ENV=production`); onboard real shops/riders via `/partner` + HQ.
+4. **Verify:** `GET /api/health` returns `{ status: "ok", db: "hosted" }`. Pushes to `main`
+   run typecheck, unit tests, lint and build in GitHub Actions (`.github/workflows/ci.yml`).
+
+Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlite + demo seed.
+
 ## What works today (all backed by Postgres)
 
 - **Discovery:** city switcher (Nairobi/Mombasa/Kisumu), live search across shops + dishes,
@@ -70,7 +91,7 @@ BASE_URL=http://localhost:3000 pnpm test:api   # API integration tests (needs de
 | Maps / GPS | **Off** — ETAs are labelled estimates; no live rider map | Plug a maps provider into tracking + dispatch |
 | SMS/WhatsApp | **Off** — status via in-app tracking | Configure sender + templates |
 | Identity verification | **Demo picker** — no passwords | Staff SSO + rider phone-OTP + KYC checks |
-| Managed Postgres | Embedded PGlite by default | Set `DATABASE_URL`, run `drizzle/*.sql` via drizzle-kit against it |
+| Managed Postgres | Embedded PGlite by default | Set `DATABASE_URL` (see Deploying above); schema auto-migrates on boot |
 
 Demo auth is intentionally passwordless so reviewers can tour every workspace; every
 staff action is still role-checked server-side and audit-logged.

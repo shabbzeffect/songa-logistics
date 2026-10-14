@@ -11,7 +11,16 @@ export interface Session {
 const COOKIE = "songa_session";
 
 function secret(): string {
-  return process.env.SESSION_SECRET ?? "songa-demo-secret-change-me";
+  const s = process.env.SESSION_SECRET;
+  if (!s) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "SESSION_SECRET is not set. Generate one (openssl rand -base64 48) and set it in your hosting dashboard.",
+      );
+    }
+    return "songa-demo-secret-change-me";
+  }
+  return s;
 }
 
 function sign(payload: string): string {
