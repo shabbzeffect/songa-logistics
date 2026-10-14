@@ -357,4 +357,102 @@ describe("Songa API journeys", () => {
     }, opsCookie);
     assert.equal(nope.status, 404);
   });
+
+  it("rider phone login: code → session → courier workspace", async () => {
+    // Seeded Nairobi rider Brian Otieno (+254722111222).
+    const req = await jfetch("/api/auth/otp/request", {
+      method: "POST", body: JSON.stringify({ phone: "0722111222", purpose: "login_rider" }),
+    });
+    assert.equal(req.status, 200);
+    const demoCode = (req.body.data as { demoCode?: string }).demoCode;
+    assert.ok(demoCode, "dev server should expose the demo code");
+
+    const bad = await jfetch("/api/auth/otp/verify", {
+      method: "POST", body: JSON.stringify({ phone: "0722111222", code: "000000", purpose: "login_rider" }),
+    });
+    assert.equal(bad.status, 401);
+
+    const good = await jfetch("/api/auth/otp/verify", {
+      method: "POST", body: JSON.stringify({ phone: "0722111222", code: demoCode, purpose: "login_rider" }),
+    });
+    assert.equal(good.status, 200);
+    const riderCookie = (good.setCookie ?? "").split(";")[0];
+    assert.ok(riderCookie.length > 0);
+
+    // Codes are single-use: replay fails.
+    const replay = await jfetch("/api/auth/otp/verify", {
+      method: "POST", body: JSON.stringify({ phone: "0722111222", code: demoCode, purpose: "login_rider" }),
+    });
+    assert.equal(replay.status, 401);
+
+    // The session opens courier (but not ops) doors.
+    const rl = await jfetch("/api/staff/riders", undefined, riderCookie);
+    assert.equal(rl.status, 200);
+    const ov = await jfetch("/api/staff/overview", undefined, riderCookie);
+    assert.equal(ov.status, 403);
+  });
+
+  it("unknown rider numbers get no code and cannot verify", async () => {
+    const req = await jfetch("/api/auth/otp/request", {
+      method: "POST", body: JSON.stringify({ phone: "0700000111", purpose: "login_rider" }),
+    });
+    assert.equal(req.status, 200);
+    assert.equal((req.body.data as { demoCode?: string }).demoCode, undefined);
+    const v = await jfetch("/api/auth/otp/verify", {
+      method: "POST", body: JSON.stringify({ phone: "0700000111", code: "123456", purpose: "login_rider" }),
+    });
+    assert.equal(v.status, 401);
+  });
+
+  it("customer phone login unlocks cross-device order history", async () => {
+    // Unique per run so the history assertions hold on every run.
+    const phone = `07${String(Date.now() % 100000000).padStart(8, "0")}`;
+    const req = await jfetch("/api/auth/otp/request", {
+      method: "POST", body: JSON.stringify({ phone, purpose: "login_customer" }),
+    });
+    assert.equal(req.status, 200);
+    const demoCode = (req.body.data as { demoCode?: string }).demoCode;
+    assert.ok(demoCode);
+    const good = await jfetch("/api/auth/otp/verify", {
+      method: "POST", body: JSON.stringify({ phone, code: demoCode, purpose: "login_customer" }),
+    });
+    assert.equal(good.status, 200);
+    const custCookie = (good.setCookie ?? "").split(";")[0];
+
+    const empty = await jfetch("/api/me/orders", undefined, custCookie);
+    assert.equal(empty.status, 200);
+    assert.deepEqual((empty.body.data as { orders: unknown[] }).orders, []);
+
+    // Place an order with the same phone, then it appears in account history.
+    const placed = await jfetch("/api/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        merchantId, items: [{ productId, qty: 1, selections: {} }],
+        customerName: "History Fan", phone, city: merchantCity, area: "Kilimani",
+        addressLine: "Hse 5", paymentMethod: "cash_on_delivery", idempotencyKey: key(),
+      }),
+    });
+    assert.equal(placed.status, 201);
+    const ref = (placed.body.data as { ref: string }).ref;
+
+    const hist = await jfetch("/api/me/orders", undefined, custCookie);
+    assert.equal(hist.status, 200);
+    const refs = (hist.body.data as { orders: { ref: string }[] }).orders.map((o) => o.ref);
+    assert.ok(refs.includes(ref));
+
+    // Anonymous callers get no history.
+    const anon = await jfetch("/api/me/orders");
+    assert.equal(anon.status, 401);
+  });
+
+  it("staff password login rejects unknown accounts and wrong passwords", async () => {
+    const unknown = await jfetch("/api/auth/staff", {
+      method: "POST", body: JSON.stringify({ phone: "0700000999", password: "long-enough-1" }),
+    });
+    assert.equal(unknown.status, 401);
+    const badPass = await jfetch("/api/auth/staff", {
+      method: "POST", body: JSON.stringify({ phone: "0712345678", password: "wrong-password-1" }),
+    });
+    assert.equal(badPass.status, 401);
+  });
 });

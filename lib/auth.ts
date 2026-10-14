@@ -6,6 +6,8 @@ export interface Session {
   role: Role;
   actorId?: string;
   name?: string;
+  /** Verified E.164 phone for OTP sessions (rider/customer). */
+  phone?: string;
 }
 
 const COOKIE = "songa_session";
@@ -35,11 +37,11 @@ export async function getSession(): Promise<Session> {
   if (!payload || !sig) return { role: "customer" };
   const expected = sign(payload);
   try {
-    if (
-      payload.length !== Buffer.from(expected).length ||
-      sig.length !== expected.length ||
-      !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
-    )
+    // Compare decoded bytes (base64url lengths vary with payload size — never
+    // compare the payload length against the signature length).
+    const sigBuf = Buffer.from(sig, "base64url");
+    const expBuf = Buffer.from(expected, "base64url");
+    if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf))
       return { role: "customer" };
   } catch {
     return { role: "customer" };

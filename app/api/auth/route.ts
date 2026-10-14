@@ -21,6 +21,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Passwordless demo picker — closed in production (use OTP / staff passwords).
+  if (process.env.NODE_ENV === "production")
+    return fail("Demo sign-in is off in production. Sign in with OTP or a staff password.", 403);
   const body = await req.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) return fail("Pick a role and account", 400);

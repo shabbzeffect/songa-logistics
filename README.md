@@ -90,11 +90,29 @@ Local dev keeps working with zero config: no `DATABASE_URL` means embedded PGlit
 | Online M-Pesa (Daraja STK) | **Off** — checkout offers *cash* + *M-Pesa on delivery* only | Set `MPESA_ENABLED=true` + key/secret/shortcode/passkey; finish `lib/mpesa.ts` + verify `app/api/payments/mpesa-callback` source (see code TODO) |
 | Maps / GPS | **Off** — ETAs are labelled estimates; no live rider map | Plug a maps provider into tracking + dispatch |
 | SMS/WhatsApp | **Off** — status via in-app tracking | Configure sender + templates |
-| Identity verification | **Demo picker** — no passwords | Staff SSO + rider phone-OTP + KYC checks |
+| Identity verification | **Phone OTP + staff passwords** — riders/customers sign in with a 6-digit SMS code, staff with scrypt-hashed passwords (see below) | Federated SSO later; rider KYC checks before go-live |
 | Managed Postgres | Embedded PGlite by default | Set `DATABASE_URL` (see Deploying above); schema auto-migrates on boot |
 
 Demo auth is intentionally passwordless so reviewers can tour every workspace; every
 staff action is still role-checked server-side and audit-logged.
+
+## Sign-in: OTP + staff passwords
+
+- **Riders & customers** (`/login`): enter a Kenyan mobile number, receive a 6-digit code,
+  verify within 10 minutes. Codes are single-use, hashed at rest, locked after 5 wrong tries,
+  and rate-limited. Riders must already exist in HQ (onboarded + verified); customers get
+  cross-device order history (`/api/me/orders`) on their verified number.
+- **Staff** (ops + merchants): password login (`POST /api/auth/staff`, scrypt-hashed,
+  10+ char policy, brute-force rate limits). Create logins with:
+  ```bash
+  npx tsx scripts/create-staff.ts --role ops --name "HQ Admin" --phone 0712345678 --password '…'
+  npx tsx scripts/create-staff.ts --role merchant --merchant-id <uuid> --name "Shop Owner" --phone 0712… --password '…'
+  ```
+- **Demo picker** (passwordless role switcher) renders only in non-production builds, and
+  `POST /api/auth` demo logins are rejected with 403 in production.
+- **SMS** is provider-gated (`lib/sms.ts`, same pattern as M-Pesa): until `SMS_ENABLED=true`
+  with credentials, codes are logged server-side and returned as `demoCode` outside production.
+  Set `SMS_ENABLED` / `SMS_API_KEY` / `SMS_SENDER` when wired (Africa's Talking, Twilio, …).
 
 ## Project map
 

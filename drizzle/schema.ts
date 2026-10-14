@@ -10,7 +10,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 
-/** Users & roles. Demo uses role sessions; passwords only for seeded staff. */
+/** Users & roles. Riders/customers prove their phone via OTP; staff use passwords (see 0004). */
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -18,8 +18,11 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("customer"), // customer|merchant|courier|ops
   merchantId: uuid("merchant_id"),
   riderId: uuid("rider_id"),
+  passwordHash: text("password_hash"), // staff only (scrypt); OTP accounts have NULL
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+},
+  (t) => [uniqueIndex("users_phone_role_idx").on(t.phone, t.role)],
+);
 
 export const merchants = pgTable(
   "merchants",
@@ -248,6 +251,22 @@ export const idempotencyKeys = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [uniqueIndex("idem_key_idx").on(t.key)],
+);
+
+/** One-time passcodes for phone login. Only hashes are stored; codes are single-use. */
+export const verificationCodes = pgTable(
+  "verification_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    phone: text("phone").notNull(), // +254...
+    codeHash: text("code_hash").notNull(), // sha256 hex of the 6-digit code
+    purpose: text("purpose").notNull(), // login_rider|login_customer
+    attempts: integer("attempts").notNull().default(0),
+    consumed: boolean("consumed").notNull().default(false),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("verification_codes_phone_idx").on(t.phone)],
 );
 
 /** Customer reviews — one per delivered order. Rating is 1–5 stars. */
