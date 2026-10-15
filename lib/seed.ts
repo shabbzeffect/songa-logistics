@@ -1,31 +1,51 @@
+import { eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "./db";
+import { calcTotals } from "./money";
+import { nextRatingX10 } from "./validation";
 import {
+  auditEvents,
   merchants,
+  orderEvents,
+  orderItems,
+  orders,
+  paymentIntents,
   products,
   modifierGroups,
   modifierOptions,
   promos,
+  reviews,
   riders,
 } from "../drizzle/schema";
 
 /** Fictional demo catalogue. Clearly sample data until real partners join. */
 
 export async function seedDatabase(db: Db): Promise<void> {
-  const existing = await db.select().from(merchants);
-  if (existing.length > 0) return;
+  // Idempotent per-entity (never a blanket early-return): migration 0003 inserts
+  // two pharmacy merchants on fresh databases BEFORE this seed runs, so a
+  // "merchants exist → skip everything" guard would leave fresh DBs with 2 shops,
+  // zero riders and zero promos. Each section below fills only what is missing.
 
-  await db.insert(riders).values([
-    { name: "Brian Otieno", phone: "+254722111222", city: "nairobi", active: true, verified: true },
-    { name: "Faith Wanjiku", phone: "+254733444555", city: "nairobi", active: true, verified: true },
-    { name: "Ali Said", phone: "+254722333444", city: "mombasa", active: true, verified: true },
-    { name: "Grace Achieng", phone: "+254701222333", city: "kisumu", active: true, verified: true },
-  ]);
+  // Demo riders start KYC-approved (mirrors migration 0005's grandfathering of
+  // verified riders) so dispatch works on a fresh database. The KYC review
+  // queue is still exercisable: any resubmission flips a rider to submitted.
+  const existingRiders = await db.select({ id: riders.id }).from(riders);
+  if (existingRiders.length === 0) {
+    await db.insert(riders).values([
+      { name: "Brian Otieno", phone: "+254722111222", city: "nairobi", active: true, verified: true, kycStatus: "approved" },
+      { name: "Faith Wanjiku", phone: "+254733444555", city: "nairobi", active: true, verified: true, kycStatus: "approved" },
+      { name: "Ali Said", phone: "+254722333444", city: "mombasa", active: true, verified: true, kycStatus: "approved" },
+      { name: "Grace Achieng", phone: "+254701222333", city: "kisumu", active: true, verified: true, kycStatus: "approved" },
+    ]);
+  }
 
-  await db.insert(promos).values([
+  const existingPromos = await db.select({ code: promos.code }).from(promos);
+  const havePromo = new Set(existingPromos.map((p) => p.code));
+  const wantedPromos = [
     { code: "KARIBU10", label: "10% off your first order (up to KSh 300)", percent: 10, cap: 300, minSubtotal: 500, active: true },
     { code: "LUNCH150", label: "KSh 150 off orders over KSh 800", amountOff: 150, minSubtotal: 800, active: true },
     { code: "SWEET20", label: "20% off gifts & shopping (up to KSh 500)", percent: 20, cap: 500, minSubtotal: 1000, active: true },
-  ]);
+  ].filter((p) => !havePromo.has(p.code));
+  if (wantedPromos.length > 0) await db.insert(promos).values(wantedPromos);
 
   async function addMerchant(
     m: typeof merchants.$inferInsert,
@@ -33,6 +53,10 @@ export async function seedDatabase(db: Db): Promise<void> {
       modifiers?: { name: string; required: boolean; multi: boolean; options: { name: string; priceDelta: number }[] }[];
     })[],
   ) {
+    // Skip shops that already exist by name (e.g. the two pharmacies migration
+    // 0003 inserts on fresh databases, with identical shelves).
+    const dup = await db.select({ id: merchants.id }).from(merchants).where(eq(merchants.name, m.name));
+    if (dup.length > 0) return dup[0].id;
     const [row] = await db.insert(merchants).values(m).returning({ id: merchants.id });
     for (const { modifiers, ...p } of items) {
       const [prod] = await db
@@ -200,4 +224,188 @@ export async function seedDatabase(db: Db): Promise<void> {
       { name: "Multivitamins (30 tabs)", description: "Daily multivitamin food supplement.", price: 550, section: "Vitamins", stock: 40, imageHint: "care" },
     ],
   );
+
+  await seedDemoHistory(db);
+}
+
+/**
+ * Demo order history + reviews. Three delivered COD orders for a fictional
+ * customer (Amina Demo, +254712345678 — sign in with 0712345678 to see them
+ * under account order history). Two carry star ratings with merchant replies so
+ * the storefront "What neighbours say" section renders; the third is left
+ * unreviewed so the rate-your-order demo path stays exercisable.
+ */
+const DEMO_CUSTOMER = { name: "Amina Demo", phone: "+254712345678" };
+
+async function seedDemoHistory(db: Db): Promise<void> {
+  const refs = ["SG-SEEDAA", "SG-SEEDAB", "SG-SEEDAC"];
+  const sentinel = await db.select({ id: orders.id }).from(orders).where(inArray(orders.ref, refs));
+  if (sentinel.length > 0) return;
+
+  async function findMerchant(name: string) {
+    const rows = await db.select().from(merchants).where(eq(merchants.name, name));
+    return rows[0];
+  }
+  async function findRider(name: string) {
+    const rows = await db.select().from(riders).where(eq(riders.name, name));
+    return rows[0];
+  }
+  async function findProduct(merchantId: string, name: string) {
+    const rows = await db
+      .select()
+      .from(products)
+      .where(eq(products.merchantId, merchantId));
+    return rows.find((p) => p.name === name);
+  }
+
+  const mama = await findMerchant("Mama Njoroge's Kitchen");
+  const greens = await findMerchant("Kilimani Greens Mart");
+  const pwani = await findMerchant("Pwani Fish Pot");
+  const brian = await findRider("Brian Otieno");
+  const ali = await findRider("Ali Said");
+  if (!mama || !greens || !pwani || !brian || !ali) return;
+
+  const specs: {
+    ref: string; token: string; idem: string; merchant: typeof mama;
+    rider: typeof brian; city: string; area: string; address: string;
+    lines: { product: string; qty: number; modifiers: { group: string; option: string; delta: number }[] }[];
+    review?: { rating: number; comment: string; reply: string };
+  }[] = [
+    {
+      ref: "SG-SEEDAA", token: "seed-demo-token-aaaa0001", idem: "seed-demo-order-1",
+      merchant: mama, rider: brian, city: "nairobi", area: "Kilimani", address: "Kindaruma Court, Hse B4",
+      lines: [
+        {
+          product: "Beef Stew + Ugali", qty: 2,
+          modifiers: [
+            { group: "Ugali size", option: "Regular", delta: 0 },
+            { group: "Extras", option: "Avocado (+KSh 80)", delta: 80 },
+          ],
+        },
+        { product: "Mango Juice (500ml)", qty: 1, modifiers: [] },
+      ],
+      review: {
+        rating: 5,
+        comment: "Beef stew tastes like home — ugali was still hot and the rider called on arrival.",
+        reply: "Asante sana Amina! Karibu tena.",
+      },
+    },
+    {
+      ref: "SG-SEEDAB", token: "seed-demo-token-aaaa0002", idem: "seed-demo-order-2",
+      merchant: greens, rider: brian, city: "nairobi", area: "Kilimani", address: "Kindaruma Court, Hse B4",
+      lines: [
+        { product: "Veggie Basket", qty: 1, modifiers: [] },
+        { product: "Fresh Milk (1L)", qty: 1, modifiers: [] },
+      ],
+      review: {
+        rating: 4,
+        comment: "Veggie basket was fresh and the milk had a long expiry date. Greens were a little wilted.",
+        reply: "Thanks for shopping with us — we have shared your note with our morning suppliers.",
+      },
+    },
+    {
+      ref: "SG-SEEDAC", token: "seed-demo-token-aaaa0003", idem: "seed-demo-order-3",
+      merchant: pwani, rider: ali, city: "mombasa", area: "Nyali", address: "Links Road, Flat 3C",
+      lines: [
+        { product: "Coconut Fish Curry + Rice", qty: 1, modifiers: [{ group: "Spice level", option: "Medium", delta: 0 }] },
+        { product: "Passion Juice (500ml)", qty: 1, modifiers: [] },
+      ],
+    },
+  ];
+
+  for (const s of specs) {
+    const priced = [];
+    for (const l of s.lines) {
+      const p = await findProduct(s.merchant.id, l.product);
+      if (!p) continue;
+      priced.push({ p, qty: l.qty, modifiers: l.modifiers, delta: l.modifiers.reduce((t, x) => t + x.delta, 0) });
+    }
+    if (priced.length !== s.lines.length) continue;
+
+    // Same maths as checkout (server-authoritative totals).
+    const totals = calcTotals({
+      lines: priced.map((l) => ({ unitPrice: l.p.price, qty: l.qty, modifierDelta: l.delta })),
+      deliveryFee: s.merchant.deliveryFee,
+      freeDeliveryOver: s.merchant.freeOver,
+    });
+
+    const [order] = await db
+      .insert(orders)
+      .values({
+        ref: s.ref,
+        trackingToken: s.token,
+        merchantId: s.merchant.id,
+        riderId: s.rider.id,
+        customerName: DEMO_CUSTOMER.name,
+        phone: DEMO_CUSTOMER.phone,
+        city: s.city,
+        area: s.area,
+        addressLine: s.address,
+        status: "delivered",
+        paymentMethod: "cash_on_delivery",
+        paymentStatus: "paid",
+        subtotal: totals.subtotal,
+        discount: totals.discount,
+        deliveryFee: totals.deliveryFee,
+        serviceFee: totals.serviceFee,
+        tip: totals.tip,
+        total: totals.total,
+        proofNote: "Delivered — received by the customer",
+        idempotencyKey: s.idem,
+      })
+      .returning({ id: orders.id });
+
+    for (const l of priced) {
+      await db.insert(orderItems).values({
+        orderId: order.id, productId: l.p.id, name: l.p.name,
+        unitPrice: l.p.price, modifierDelta: l.delta, modifiers: l.modifiers,
+        qty: l.qty, lineTotal: (l.p.price + l.delta) * l.qty,
+      });
+      if (l.p.trackInventory) {
+        await db
+          .update(products)
+          .set({ stock: sql`${products.stock} - ${l.qty}` })
+          .where(eq(products.id, l.p.id));
+      }
+    }
+
+    const trail: { status: string; note: string; actor: string }[] = [
+      { status: "placed", note: "Order placed", actor: "customer" },
+      { status: "accepted", note: `Accepted by ${s.merchant.name}`, actor: "merchant" },
+      { status: "preparing", note: "Being prepared", actor: "merchant" },
+      { status: "ready", note: "Ready for pickup", actor: "merchant" },
+      { status: "picked_up", note: `Picked up by ${s.rider.name}`, actor: `courier:${s.rider.id.slice(0, 8)}` },
+      { status: "on_the_way", note: "On the way", actor: `courier:${s.rider.id.slice(0, 8)}` },
+      { status: "delivered", note: "Delivered — received by the customer", actor: `courier:${s.rider.id.slice(0, 8)}` },
+    ];
+    for (const e of trail) {
+      await db.insert(orderEvents).values({ orderId: order.id, status: e.status, note: e.note, actor: e.actor });
+    }
+    await db.insert(paymentIntents).values({
+      orderId: order.id, method: "cash_on_delivery", amount: totals.total,
+      status: "paid", idempotencyKey: `pay-${s.idem}`,
+    });
+    await db.insert(auditEvents).values({
+      kind: "order.created", entityId: order.id,
+      detail: { ref: s.ref, total: totals.total, paymentMethod: "cash_on_delivery", demo: true }, actor: "customer",
+    });
+
+    if (s.review) {
+      const [review] = await db
+        .insert(reviews)
+        .values({
+          orderId: order.id, merchantId: s.merchant.id,
+          rating: s.review.rating, comment: s.review.comment,
+          reply: s.review.reply, repliedAt: new Date(),
+        })
+        .returning({ id: reviews.id });
+      // Same aggregate blend as the live review endpoint (rating stored x10).
+      const next = nextRatingX10(s.merchant.rating, s.merchant.ratingsCount, s.review.rating);
+      await db.update(merchants).set({ rating: next.rating, ratingsCount: next.count }).where(eq(merchants.id, s.merchant.id));
+      await db.insert(auditEvents).values({
+        kind: "review.created", entityId: review.id,
+        detail: { orderId: order.id, merchantId: s.merchant.id, rating: s.review.rating, demo: true }, actor: "customer",
+      });
+    }
+  }
 }
