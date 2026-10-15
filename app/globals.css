@@ -52,18 +52,4 @@ textarea:focus-visible {
   box-shadow: 0 10px 24px -12px rgba(11, 43, 33, 0.35);
 }
 
-/* Demo food-art gradients (no external images needed) */
-.art-stew { background: linear-gradient(135deg, #7a3b1e, #d9822b 60%, #f2b544); }
-.art-rice { background: linear-gradient(135deg, #b97e1f, #f2d06b 60%, #fbf3d9); }
-.art-beans { background: linear-gradient(135deg, #4c5b22, #8aa63d 60%, #d7e6a3); }
-.art-juice { background: linear-gradient(135deg, #c2451e, #f2604c 60%, #ffb199); }
-.art-veg { background: linear-gradient(135deg, #14503c, #2e9e63 60%, #b9e6c9); }
-.art-milk { background: linear-gradient(135deg, #7fa8c9, #dceefb 60%, #ffffff); }
-.art-eggs { background: linear-gradient(135deg, #a9803e, #e8c57c 60%, #faf0d7); }
-.art-grains { background: linear-gradient(135deg, #8a5a24, #d9a441 60%, #f6e3b4); }
-.art-care { background: linear-gradient(135deg, #2b6f8e, #6fc3df 60%, #d8f1fa); }
-.art-flowers { background: linear-gradient(135deg, #a4245c, #f2609c 60%, #ffd3e3); }
-.art-gift { background: linear-gradient(135deg, #5b2b8e, #9a6fd3 60%, #e3d4fa); }
-.art-fish { background: linear-gradient(135deg, #134e6f, #2e9ec2 60%, #bfe6f2); }
-.art-fruit { background: linear-gradient(135deg, #b3541e, #f2b544 60%, #ffe9a8); }
-.art-meal { background: linear-gradient(135deg, #0e3a2c, #1b6a4f 60%, #f2604c); }
+/* Demo catalogue art is hand-built SVG in components/art.tsx (no external images needed) */

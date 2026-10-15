@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useShop } from "@/lib/shop-context";
 import { CATEGORIES, cityName } from "@/lib/geo";
-import { Art, Badge, EmptyState, Price, Rating, SectionTitle } from "@/components/ui";
+import { Art } from "@/components/art";
+import { Badge, EmptyState, Price, Rating, SectionTitle } from "@/components/ui";
 
 interface Merchant {
   id: string; name: string; description: string; city: string; areas: string;

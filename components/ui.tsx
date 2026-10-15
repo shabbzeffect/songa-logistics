@@ -55,25 +55,9 @@ export function Field({
 export const inputCls =
   "w-full rounded-xl border border-stone-300 bg-white px-3.5 py-2.5 text-[15px] text-stone-900 placeholder:text-stone-400 focus:border-forest-700";
 
-const ART: Record<string, string> = {
-  stew: "art-stew", rice: "art-rice", beans: "art-beans", juice: "art-juice",
-  veg: "art-veg", milk: "art-milk", eggs: "art-eggs", grains: "art-grains",
-  care: "art-care", flowers: "art-flowers", gift: "art-gift", fish: "art-fish",
-  fruit: "art-fruit", meal: "art-meal",
-};
-
-/** Gradient placeholder art for demo listings (alt text describes the item). */
-export function Art({ hint, label, className = "h-28" }: { hint: string; label: string; className?: string }) {
-  const cls = ART[hint] ?? ART.meal;
-  return (
-    <div role="img" aria-label={label} className={`${cls} ${className} relative w-full overflow-hidden`}>
-      <span aria-hidden className="absolute inset-0 flex items-center justify-center text-4xl opacity-80">✿</span>
-      <span className="absolute bottom-1.5 left-2 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-        Demo photo
-      </span>
-    </div>
-  );
-}
+// Demo catalogue artwork lives in components/art.tsx (hand-built SVG scenes,
+// one per image hint — real partner photos replace these at onboarding).
+export { Art } from "./art";
 
 export function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   return (

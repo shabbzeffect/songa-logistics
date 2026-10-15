@@ -3,7 +3,8 @@
 import { Suspense, use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useShop } from "@/lib/shop-context";
-import { Art, Badge, EmptyState, Price, Rating } from "@/components/ui";
+import { Art } from "@/components/art";
+import { Badge, EmptyState, Price, Rating } from "@/components/ui";
 import { formatKES } from "@/lib/money";
 
 interface Modifier {
