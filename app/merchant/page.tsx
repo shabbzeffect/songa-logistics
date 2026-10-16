@@ -68,6 +68,13 @@ function Console() {
     loadShop();
   }
 
+  async function deleteProduct(id: string, name: string) {
+    if (!confirm(`Delete "${name}" from your menu? Items on past orders can't be deleted — pause them instead.`)) return;
+    const j = await api(`/api/staff/products/${id}`, { method: "DELETE" });
+    setMsg(j.ok ? "Item deleted." : (j.error ?? "Couldn't delete."));
+    loadShop();
+  }
+
   async function patchShop(body: object) {
     if (!shop) return;
     const j = await api(`/api/staff/merchants/${shop.id}`, {
@@ -137,6 +144,9 @@ function Console() {
               </div>
               <button onClick={() => patchProduct(p.id, { available: !p.available })} className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-bold">
                 {p.available ? "Pause" : "Unpause"}
+              </button>
+              <button onClick={() => deleteProduct(p.id, p.name)} aria-label={`Delete ${p.name}`} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-bold text-red-700">
+                Delete
               </button>
               <label className="flex items-center gap-1 text-xs">KSh
                 <input type="number" defaultValue={p.price} min={1} id={`pr-${p.id}`} className="w-24 rounded-lg border border-stone-300 px-2 py-1.5" />

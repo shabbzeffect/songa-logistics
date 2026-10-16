@@ -111,6 +111,34 @@ function Hq() {
     loadAll();
   }
 
+  const [openShop, setOpenShop] = useState<string | null>(null);
+  const [shopItems, setShopItems] = useState<{ id: string; name: string; price: number; available: boolean }[]>([]);
+
+  async function toggleItems(id: string) {
+    if (openShop === id) { setOpenShop(null); return; }
+    setOpenShop(id);
+    const j = await api<{ products: typeof shopItems }>(`/api/staff/products?merchantId=${id}`);
+    if (j.ok && j.data) setShopItems(j.data.products);
+    else setMsg(j.error ?? "Couldn't load items.");
+  }
+
+  async function deleteShop(id: string, name: string) {
+    if (!confirm(`Delete ${name} and its whole menu? Shops with orders on record can't be deleted — unapprove them instead.`)) return;
+    const j = await api(`/api/staff/merchants/${id}`, { method: "DELETE" });
+    setMsg(j.ok ? "Shop deleted." : (j.error ?? "Couldn't delete."));
+    if (openShop === id) setOpenShop(null);
+    loadAll();
+  }
+
+  async function deleteShopItem(id: string, name: string, merchantId: string) {
+    if (!confirm(`Delete "${name}" from the menu? Items on past orders can't be deleted — pause them instead.`)) return;
+    const j = await api(`/api/staff/products/${id}`, { method: "DELETE" });
+    setMsg(j.ok ? "Item deleted." : (j.error ?? "Couldn't delete."));
+    const r = await api<{ products: typeof shopItems }>(`/api/staff/products?merchantId=${merchantId}`);
+    if (r.ok && r.data) setShopItems(r.data.products);
+    loadAll();
+  }
+
   async function handleLead(id: string, handled: boolean) {
     await api("/api/staff/leads", {
       method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, handled }),
@@ -209,18 +237,39 @@ function Hq() {
       {tab === "shops" && (
         <div className="space-y-2">
           {shops.map((m) => (
-            <article key={m.id} className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-4 shadow-sm">
-              <div className="min-w-48 flex-1">
-                <p className="font-bold">{m.name} <span className="text-xs text-stone-500">· {m.city} · {m.category}</span></p>
-                <p className="text-xs">{m.approved ? (m.open ? "Live" : "Paused by ops") : "Pending approval"}</p>
+            <article key={m.id} className="rounded-2xl bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-48 flex-1">
+                  <p className="font-bold">{m.name} <span className="text-xs text-stone-500">· {m.city} · {m.category}</span></p>
+                  <p className="text-xs">{m.approved ? (m.open ? "Live" : "Paused by ops") : "Pending approval"}</p>
+                </div>
+                <Badge tone={m.approved ? "green" : "sand"}>{m.approved ? "Approved" : "Pending"}</Badge>
+                <button onClick={() => toggleItems(m.id)} aria-expanded={openShop === m.id} className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-bold">
+                  {openShop === m.id ? "Hide items" : "Items"}
+                </button>
+                <button onClick={() => toggleShop(m.id, { approved: !m.approved })} className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-bold">
+                  {m.approved ? "Unapprove" : "Approve"}
+                </button>
+                <button onClick={() => toggleShop(m.id, { open: !m.open })} className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-bold">
+                  {m.open ? "Close" : "Open"}
+                </button>
+                <button onClick={() => deleteShop(m.id, m.name)} className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-bold text-red-700">
+                  Delete
+                </button>
               </div>
-              <Badge tone={m.approved ? "green" : "sand"}>{m.approved ? "Approved" : "Pending"}</Badge>
-              <button onClick={() => toggleShop(m.id, { approved: !m.approved })} className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-bold">
-                {m.approved ? "Unapprove" : "Approve"}
-              </button>
-              <button onClick={() => toggleShop(m.id, { open: !m.open })} className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-bold">
-                {m.open ? "Close" : "Open"}
-              </button>
+              {openShop === m.id && (
+                <ul className="mt-3 space-y-1 border-t border-stone-100 pt-3">
+                  {shopItems.length === 0 && <li className="text-xs text-stone-500">No items in this menu.</li>}
+                  {shopItems.map((p) => (
+                    <li key={p.id} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1">{p.name} <span className="text-xs text-stone-500">· {p.available ? "live" : "paused"}</span></span>
+                      <button onClick={() => deleteShopItem(p.id, p.name, m.id)} aria-label={`Delete ${p.name}`} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs font-bold text-red-700">
+                        Delete
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </article>
           ))}
         </div>
